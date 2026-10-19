@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#2447A3">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Canhotos">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>[hidden]{display:none!important}html{color-scheme:light}body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}img{max-width:100%}</style>
+<title>Scanner de Canhotos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: uma coluna de balcão (mobile), três blocos em sequência real: fotos → documento → salvar; lista de salvos abaixo */
+:root{
+  --bg:#EEF1F6; --surface:#FFFFFF; --ink:#18202E; --muted:#5A6577; --line:#D5DBE5;
+  --carbon:#2447A3; --carbon-soft:#E3E9F8; --ok:#1E7A4B; --ok-soft:#E1F2E9; --warn:#9A5800; --warn-soft:#FBEFDC; --err:#B3261E;
+  --ed-bg:#0B0F16; --ed-ink:#E5E9F0; --ed-muted:#97A2B4; --ed-line:#3A4458; --ed-accent:#88A6F2; --ed-del:#F28B82;
+  --font-ui:"Archivo",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E131B; --surface:#161D28; --ink:#E5E9F0; --muted:#97A2B4; --line:#2A3344;
+  --carbon:#88A6F2; --carbon-soft:#1D2840; --ok:#62C893; --ok-soft:#15291F; --warn:#E3A64A; --warn-soft:#2D2312; --err:#F28B82; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E131B; --surface:#161D28; --ink:#E5E9F0; --muted:#97A2B4; --line:#2A3344;
+  --carbon:#88A6F2; --carbon-soft:#1D2840; --ok:#62C893; --ok-soft:#15291F; --warn:#E3A64A; --warn-soft:#2D2312; --err:#F28B82; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-ui);font-size:15px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+.wrap{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-direction:column;gap:4px}
+h1{font-size:1.45rem;font-weight:700;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.sub{color:var(--muted);margin:0;font-size:.92rem}
+.step{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.step-h{display:flex;align-items:baseline;gap:10px}
+.step-n{font-family:var(--font-mono);font-size:.78rem;color:var(--carbon);font-weight:600}
+.step-t{font-weight:600;font-size:1rem;margin:0}
+.btn{appearance:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-weight:600;
+  border-radius:10px;padding:12px 16px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px}
+.btn:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--carbon);outline-offset:2px}
+.btn.primary{background:var(--carbon);border-color:var(--carbon);color:var(--surface)}
+.btn.primary:disabled{opacity:.45;cursor:not-allowed}
+.btn.ghost{background:transparent}
+.btn.small{min-height:34px;padding:6px 10px;font-size:.85rem}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row > .btn{flex:1 1 140px}
+.shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
+.shot{position:relative;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg);aspect-ratio:3/4;max-width:100%}
+.shot img{width:100%;height:100%;object-fit:cover;display:block}
+.shot .pg{position:absolute;left:6px;top:6px;background:var(--surface);color:var(--ink);font-family:var(--font-mono);font-size:.7rem;padding:1px 6px;border-radius:4px;border:1px solid var(--line)}
+.shot.verso{border-color:var(--warn)}
+.shot.verso .pg{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
+.shot img{cursor:pointer}
+.shot .flt{position:absolute;left:6px;top:30px;background:var(--surface);color:var(--muted);font-size:.66rem;padding:1px 6px;border-radius:4px;border:1px solid var(--line);text-transform:uppercase;letter-spacing:.04em}
+.ed{position:fixed;inset:0;z-index:50;background:var(--ed-bg);color:var(--ed-ink);display:flex;flex-direction:column;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+.ed-top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px}
+.ed-top b{font-size:.95rem;font-weight:600}
+.ed-btn{appearance:none;border:1px solid var(--ed-line);background:transparent;color:var(--ed-ink);font:inherit;font-weight:600;border-radius:9px;padding:8px 14px;min-height:42px;cursor:pointer}
+.ed-btn.go{background:var(--ed-accent);border-color:var(--ed-accent);color:var(--ed-bg)}
+.ed-btn.del{color:var(--ed-del)}
+.ed-btn:focus-visible,.ed-chip:focus-visible{outline:2px solid var(--ed-accent);outline-offset:2px}
+.ed-stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:8px 12px}
+.ed-stage canvas{display:block;touch-action:none}
+.ed-hint{font-size:.8rem;color:var(--ed-muted);text-align:center;margin:0}
+.ed-bot{display:flex;flex-direction:column;gap:10px;padding:8px 12px 14px}
+.ed-filters{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
+.ed-chip{appearance:none;border:1px solid var(--ed-line);background:transparent;color:var(--ed-ink);font:inherit;font-size:.9rem;font-weight:600;border-radius:999px;padding:8px 14px;white-space:nowrap;cursor:pointer;min-height:40px}
+.ed-chip[aria-pressed="true"]{background:var(--ed-ink);color:var(--ed-bg);border-color:var(--ed-ink)}
+.ed-row{display:flex;gap:8px;flex-wrap:wrap}
+.ed-row .ed-btn{flex:1 1 90px}
+.shot .acts{position:absolute;right:4px;bottom:4px;display:flex;gap:4px}
+.shot .acts button{width:30px;height:30px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;font-size:.9rem;line-height:1}
+.empty{border:1.5px dashed var(--line);border-radius:10px;padding:18px;color:var(--muted);font-size:.9rem;text-align:center}
+.toggle{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.9rem}
+.toggle input{width:18px;height:18px;accent-color:var(--carbon)}
+
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:600;padding:3px 9px;border-radius:999px;text-transform:uppercase;letter-spacing:.04em;width:fit-content}
+.chip.idle{background:var(--bg);color:var(--muted)}
+.chip.busy{background:var(--carbon-soft);color:var(--carbon)}
+.chip.ok{background:var(--ok-soft);color:var(--ok)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.busy .dot{animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.busy .dot{animation:none}}
+
+.doc{display:flex;flex-direction:column;gap:12px}
+.doc.example{opacity:.62}
+.fields{display:grid;grid-template-columns:110px 1fr;gap:10px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;min-width:0}
+input[type=text],select{font:inherit;font-size:1rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;width:100%;min-width:0;text-transform:none;letter-spacing:0}
+input.num{font-family:var(--font-mono);font-size:1.25rem;font-weight:600}
+.key{font-family:var(--font-mono);font-size:.82rem;line-height:1.7;word-spacing:.15em;background:var(--bg);border-radius:8px;padding:8px 10px;overflow-wrap:anywhere;color:var(--ink)}
+.key-l{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;font-size:.85rem}
+.meta div{display:flex;flex-direction:column;min-width:0}
+.meta span:first-child{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.meta span:last-child{font-family:var(--font-mono);overflow-wrap:anywhere}
+.msg{font-size:.88rem;color:var(--muted);margin:0}
+.msg.err{color:var(--err)}
+.msg.warn{color:var(--warn)}
+
+.saved{display:flex;flex-direction:column;gap:0}
+.saved-i{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--line);font-size:.9rem}
+.saved-i:first-child{border-top:0}
+.saved-i .nm{font-family:var(--font-mono);overflow-wrap:anywhere;min-width:0}
+.saved-i .tm{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.foot{color:var(--muted);font-size:.8rem;margin:0}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header>
+    <h1>Scanner de Canhotos</h1>
+    <p class="sub">Fotografe o CT-e, a nota ou o canhoto grampeado. O número sai do código de barras e o PDF já vem com o nome certo.</p>
+  </header>
+
+  <section class="step" aria-labelledby="t1">
+    <div class="step-h"><span class="step-n">1</span><h2 class="step-t" id="t1">Fotos do documento</h2></div>
+    <div id="shots" class="shots" hidden></div>
+    <div id="emptyShots" class="empty">Nenhuma foto ainda. Cada foto vira uma página do PDF.</div>
+    <div class="row">
+      <button class="btn primary" id="camBtn" type="button">Foto da frente</button>
+      <button class="btn" id="versoBtn" type="button" disabled>Adicionar verso</button>
+    </div>
+    <div class="row">
+      <button class="btn ghost small" id="galBtn" type="button">Frente da galeria</button>
+      <button class="btn ghost small" id="galVersoBtn" type="button" disabled>Verso da galeria</button>
+    </div>
+    <p class="msg">Tem ressalva escrita atrás do CT-e ou da nota? Use “Adicionar verso”. Frente e verso são salvos juntos, em um único PDF, nessa ordem.</p>
+    <input type="file" id="camIn" accept="image/*" capture="environment" hidden>
+    <input type="file" id="galIn" accept="image/*" multiple hidden>
+    <input type="file" id="versoIn" accept="image/*" capture="environment" hidden>
+    <input type="file" id="galVersoIn" accept="image/*" multiple hidden>
+    <label class="toggle"><input type="checkbox" id="autoEdit" checked> Abrir corte e filtro depois de cada foto</label>
+    <p class="msg">Toque numa foto para cortar, girar ou trocar o filtro (Impressão, Clarear, Cinza ou Original).</p>
+  </section>
+
+  <section class="step" aria-labelledby="t2">
+    <div class="step-h"><span class="step-n">2</span><h2 class="step-t" id="t2">Documento identificado</h2></div>
+    <span id="status" class="chip idle"><span class="dot"></span><span id="statusTx">Exemplo</span></span>
+    <div id="doc" class="doc">
+      <div class="fields">
+        <label class="f" for="tipo">Tipo
+          <select id="tipo">
+            <option value="CTe">CT-e</option>
+            <option value="NFe">NF-e</option>
+            <option value="NFCe">NFC-e</option>
+            <option value="MDFe">MDF-e</option>
+          </select>
+        </label>
+        <label class="f" for="numero">Número
+          <input type="text" id="numero" class="num" inputmode="numeric" autocomplete="off">
+        </label>
+      </div>
+      <div id="keyBox">
+        <div class="key-l">Chave de acesso</div>
+        <div class="key" id="keyTx"></div>
+      </div>
+      <div class="meta" id="meta">
+        <div><span>Série</span><span id="mSerie">–</span></div>
+        <div><span>Emissão</span><span id="mData">–</span></div>
+        <div><span>CNPJ emitente</span><span id="mCnpj">–</span></div>
+      </div>
+      <p class="msg" id="readMsg">Este é um exemplo. Tire a primeira foto para ler um documento real.</p>
+    </div>
+  </section>
+
+  <section class="step" aria-labelledby="t3">
+    <div class="step-h"><span class="step-n">3</span><h2 class="step-t" id="t3">Salvar PDF</h2></div>
+    <label class="f" for="fname">Nome do arquivo
+      <input type="text" id="fname" autocomplete="off">
+    </label>
+    <label class="toggle"><input type="checkbox" id="ressalva"> Tem ressalva no verso (acrescenta _RESSALVA ao nome)</label>
+    <p class="msg" id="saveMsg"></p>
+    <div class="row">
+      <button class="btn primary" id="saveBtn" type="button" disabled>Salvar PDF</button>
+      <button class="btn ghost" id="nextBtn" type="button">Limpar e recomeçar</button>
+    </div>
+  </section>
+
+  <section class="step" aria-labelledby="t4">
+    <div class="step-h"><h2 class="step-t" id="t4">Salvos nesta sessão</h2></div>
+    <div class="saved" id="saved"><p class="msg">Nenhum PDF salvo ainda.</p></div>
+  </section>
+
+  <p class="foot">Ao salvar, escolha o Nextcloud na tela de compartilhar. As fotos e o PDF são processados só no seu aparelho e não passam por nenhum servidor.</p>
+</div>
+
+<div class="ed" id="ed" hidden role="dialog" aria-modal="true" aria-labelledby="edTitle">
+  <div class="ed-top">
+    <button class="ed-btn" id="edCancel" type="button">Cancelar</button>
+    <b id="edTitle">Ajustar foto</b>
+    <button class="ed-btn go" id="edOk" type="button">Pronto</button>
+  </div>
+  <div class="ed-stage" id="edStage"><canvas id="edCv" aria-label="Arraste os cantos para cortar"></canvas></div>
+  <p class="ed-hint">Arraste os cantos para cortar. Arraste o meio para mover o corte.</p>
+  <div class="ed-bot">
+    <div class="ed-filters" id="edFilters" role="group" aria-label="Filtro"></div>
+    <div class="ed-row">
+      <button class="ed-btn" id="edRot" type="button">Girar</button>
+      <button class="ed-btn" id="edFull" type="button">Foto inteira</button>
+      <button class="ed-btn del" id="edDel" type="button">Excluir foto</button>
+    </div>
+  </div>
+</div>
+
+<script src="zxing.min.js"></script>
+<script src="jspdf.umd.min.js"></script>
+<script>
+(function(){
+const $ = id => document.getElementById(id);
+const MODELOS = {"55":"NFe","57":"CTe","58":"MDFe","65":"NFCe","67":"CTe"};
+const st = { photos: [], key: null, numero: "", tipo: "CTe", nameEdited: false, reading: false, saved: [], example: true };
+async function saveFile(blob, fname){
+  const file = new File([blob], fname, { type: "application/pdf" });
+  if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })){
+    try{ await navigator.share({ files: [file], title: fname }); return; }
+    catch(e){ if (e && e.name === "AbortError") throw { code: "declined" }; }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = fname;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+/* ---------- chave de acesso ---------- */
+function dvOk(k){
+  let s = 0, w = 2;
+  for (let i = 42; i >= 0; i--){ s += (+k[i]) * w; w = w === 9 ? 2 : w + 1; }
+  let dv = 11 - (s % 11); if (dv >= 10) dv = 0;
+  return dv === +k[43];
+}
+function withDv(k43){
+  let s = 0, w = 2;
+  for (let i = 42; i >= 0; i--){ s += (+k43[i]) * w; w = w === 9 ? 2 : w + 1; }
+  let dv = 11 - (s % 11); if (dv >= 10) dv = 0;
+  return k43 + dv;
+}
+function parseKey(k){
+  if (!/^\d{44}$/.test(k) || !dvOk(k)) return null;
+  return {
+    chave: k, uf: k.slice(0,2), aamm: k.slice(2,6), cnpj: k.slice(6,20), modelo: k.slice(20,22),
+    serie: String(parseInt(k.slice(22,25),10)), numero: String(parseInt(k.slice(25,34),10)),
+    tipo: MODELOS[k.slice(20,22)] || "NFe"
+  };
+}
+function findKeys(text){
+  const out = [];
+  const m = String(text).match(/\d{44}/g) || [];
+  m.forEach(x => { const p = parseKey(x); if (p) out.push(p); });
+  const d = String(text).replace(/\D/g, "");
+  if (!out.length && d.length === 44){ const p = parseKey(d); if (p) out.push(p); }
+  return out;
+}
+function pickBest(list){
+  if (!list.length) return null;
+  return list.find(p => p.tipo === "CTe") || list[0];
+}
+const fmtKey = k => k.replace(/(\d{4})/g, "$1 ").trim();
+const fmtCnpj = c => c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+const fmtAamm = a => a.slice(2,4) + "/20" + a.slice(0,2);
+
+/* ---------- imagem ---------- */
+function loadImage(file){
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => res({ img, url });
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("img")); };
+    img.src = url;
+  });
+}
+function toCanvas(src, maxSide, rot){
+  rot = rot || 0;
+  const sw = src.width, sh = src.height;
+  const k = Math.min(1, maxSide / Math.max(sw, sh));
+  const w = Math.round(sw * k), h = Math.round(sh * k);
+  const c = document.createElement("canvas");
+  const swap = rot % 180 !== 0;
+  c.width = swap ? h : w; c.height = swap ? w : h;
+  const g = c.getContext("2d");
+  g.translate(c.width / 2, c.height / 2); g.rotate(rot * Math.PI / 180);
+  g.drawImage(src, -w / 2, -h / 2, w, h);
+  return c;
+}
+function cropCanvas(src, y0, y1, maxSide){
+  const sy = Math.round(src.height * y0), sh = Math.round(src.height * (y1 - y0));
+  const k = Math.min(2.2, maxSide / Math.max(src.width, sh));
+  const c = document.createElement("canvas");
+  c.width = Math.round(src.width * k); c.height = Math.round(sh * k);
+  c.getContext("2d").drawImage(src, 0, sy, src.width, sh, 0, 0, c.width, c.height);
+  return c;
+}
+function enhance(c){
+  const g = c.getContext("2d"), d = g.getImageData(0, 0, c.width, c.height), p = d.data;
+  const hist = new Uint32Array(256), n = c.width * c.height;
+  for (let i = 0; i < p.length; i += 4){ const y = (p[i]*299 + p[i+1]*587 + p[i+2]*114) / 1000 | 0; p[i] = y; hist[y]++; }
+  let lo = 0, hi = 255, acc = 0;
+  for (; lo < 255; lo++){ acc += hist[lo]; if (acc > n * 0.02) break; }
+  acc = 0; for (; hi > 0; hi--){ acc += hist[hi]; if (acc > n * 0.10) break; }
+  const span = Math.max(1, hi - lo);
+  for (let i = 0; i < p.length; i += 4){
+    let v = (p[i] - lo) / span; v = Math.max(0, Math.min(1, v)); v = Math.pow(v, 1.25) * 255;
+    p[i] = p[i+1] = p[i+2] = v;
+  }
+  g.putImageData(d, 0, 0);
+  return c;
+}
+
+/* ---------- leitura do código de barras ---------- */
+const tick = () => new Promise(r => setTimeout(r, 0));
+let zReader = null;
+function zxingDecode(c){
+  if (!window.ZXing) return [];
+  try{
+    if (!zReader){
+      const hints = new Map();
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.QR_CODE]);
+      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+      zReader = new ZXing.MultiFormatReader(); zReader.setHints(hints);
+    }
+    const g = c.getContext("2d"), d = g.getImageData(0, 0, c.width, c.height).data;
+    const lum = new Uint8ClampedArray(c.width * c.height);
+    for (let i = 0, j = 0; j < lum.length; i += 4, j++) lum[j] = (d[i]*299 + d[i+1]*587 + d[i+2]*114) / 1000;
+    const src = new ZXing.RGBLuminanceSource(lum, c.width, c.height);
+    for (const Bin of [ZXing.HybridBinarizer, ZXing.GlobalHistogramBinarizer]){
+      try{ const r = zReader.decode(new ZXing.BinaryBitmap(new Bin(src))); const k = findKeys(r.getText()); if (k.length) return k; }
+      catch(e){} finally { try{ zReader.reset(); }catch(e){} }
+    }
+  }catch(e){}
+  return [];
+}
+function locateBarcodes(src, rot){
+  const s = toCanvas(src, 480, rot), W = s.width, H = s.height;
+  const d = s.getContext("2d").getImageData(0, 0, W, H).data, g = new Float32Array(W * H);
+  for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = d[i]*.299 + d[i+1]*.587 + d[i+2]*.114;
+  const e = new Float32Array(W * H);
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++){
+    const i = y * W + x; e[i] = Math.max(0, Math.abs(g[i+1] - g[i-1]) - Math.abs(g[i+W] - g[i-W]));
+  }
+  const W1 = W + 1, I = new Float64Array(W1 * (H + 1));
+  for (let y = 0; y < H; y++){ let r = 0; for (let x = 0; x < W; x++){ r += e[y*W + x]; I[(y+1)*W1 + x + 1] = I[y*W1 + x + 1] + r; } }
+  const rx = 9, ry = 3, b = new Float32Array(W * H); let mx = 0;
+  for (let y = 0; y < H; y++){
+    const y0 = Math.max(0, y - ry), y1 = Math.min(H, y + ry + 1);
+    for (let x = 0; x < W; x++){
+      const x0 = Math.max(0, x - rx), x1 = Math.min(W, x + rx + 1);
+      const v = (I[y1*W1 + x1] - I[y0*W1 + x1] - I[y1*W1 + x0] + I[y0*W1 + x0]) / ((x1 - x0) * (y1 - y0));
+      b[y*W + x] = v; if (v > mx) mx = v;
+    }
+  }
+  if (mx < 4) return [];
+  const th = mx * .4, seen = new Uint8Array(W * H), comps = [], stack = [];
+  for (let s0 = 0; s0 < b.length; s0++){
+    if (seen[s0] || b[s0] < th) continue;
+    let x0 = W, y0 = H, x1 = 0, y1 = 0, sum = 0, n = 0;
+    stack.push(s0); seen[s0] = 1;
+    while (stack.length){
+      const i = stack.pop(), x = i % W, y = (i / W) | 0;
+      sum += b[i]; n++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      for (const j of [i - 1, i + 1, i - W, i + W]){
+        if (j < 0 || j >= b.length || seen[j] || b[j] < th) continue;
+        if ((j === i - 1 && x === 0) || (j === i + 1 && x === W - 1)) continue;
+        seen[j] = 1; stack.push(j);
+      }
+    }
+    if (n > W * H * .002 && (x1 - x0) > (y1 - y0) * .8) comps.push({ x0: x0 / W, y0: y0 / H, x1: (x1 + 1) / W, y1: (y1 + 1) / H, sum });
+  }
+  return comps.sort((a, c) => c.sum - a.sum).slice(0, 3);
+}
+function cropBox(full, bx){
+  const w = bx.x1 - bx.x0, h = bx.y1 - bx.y0;
+  const x0 = Math.max(0, bx.x0 - w * .08 - .01), x1 = Math.min(1, bx.x1 + w * .08 + .01);
+  const y0 = Math.max(0, bx.y0 - h * .4), y1 = Math.min(1, bx.y1 + h * .4);
+  const sx = x0 * full.width, sy = y0 * full.height, sw = (x1 - x0) * full.width, sh = (y1 - y0) * full.height;
+  const k = Math.min(2.5, 1800 / sw);
+  const c = document.createElement("canvas"); c.width = Math.round(sw * k); c.height = Math.max(1, Math.round(sh * k));
+  c.getContext("2d").drawImage(full, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  return c;
+}
+async function decodePhoto(img){
+  let found = [];
+  if ("BarcodeDetector" in window){
+    try{
+      const det = new BarcodeDetector({ formats: ["code_128", "qr_code"] });
+      const res = await det.detect(toCanvas(img, 2400));
+      res.forEach(r => found.push(...findKeys(r.rawValue)));
+      if (found.length) return pickBest(found);
+    }catch(e){}
+  }
+  for (const rot of [0, 90]){
+    await tick();
+    const boxes = locateBarcodes(img, rot);
+    if (!boxes.length) continue;
+    const full = toCanvas(img, 2600, rot);
+    for (const bx of boxes){ await tick(); found = zxingDecode(cropBox(full, bx)); if (found.length) return pickBest(found); }
+  }
+  const plan = [
+    () => toCanvas(img, 1600),
+    () => cropCanvas(toCanvas(img, 2400), 0, 0.5, 2000),
+    () => cropCanvas(toCanvas(img, 2400), 0.5, 1, 2000),
+    () => cropCanvas(toCanvas(img, 2400), 0.25, 0.75, 2000),
+    () => toCanvas(img, 1600, 90),
+    () => cropCanvas(toCanvas(img, 2400, 90), 0, 0.5, 2000),
+    () => cropCanvas(toCanvas(img, 2400, 90), 0.5, 1, 2000),
+    () => toCanvas(img, 1000),
+    () => toCanvas(img, 2400)
+  ];
+  for (const make of plan){
+    await tick();
+    found = zxingDecode(make());
+    if (found.length) return pickBest(found);
+  }
+  return null;
+}
+
+/* ---------- interface ---------- */
+function setStatus(kind, text){
+  const s = $("status"); s.className = "chip " + kind; $("statusTx").textContent = text;
+}
+function setMsg(id, text, kind){ const m = $(id); m.textContent = text || ""; m.className = "msg" + (kind ? " " + kind : ""); }
+function buildName(){
+  const n = ($("numero").value || "").replace(/\D/g, "");
+  return n ? `${$("tipo").value}_${n}${$("ressalva").checked ? "_RESSALVA" : ""}.pdf` : "";
+}
+function refreshName(){ if (!st.nameEdited) $("fname").value = buildName(); refreshSave(); }
+function refreshSave(){
+  const hasFront = st.photos.some(p => p.lado === "frente");
+  $("versoBtn").disabled = !hasFront; $("galVersoBtn").disabled = !hasFront;
+  const ok = !st.example && st.photos.length > 0 && /\d/.test($("numero").value) && $("fname").value.trim().length > 0 && !st.reading;
+  $("saveBtn").disabled = !ok;
+  if (!st.example && st.photos.length){
+    const n = ($("numero").value || "").replace(/\D/g, "");
+    const dup = n && st.saved.some(s => s.tipo === $("tipo").value && s.numero === n);
+    setMsg("saveMsg", dup ? "Atenção: este número já foi salvo nesta sessão." : "", dup ? "warn" : "");
+  }
+}
+function showKey(p){
+  if (p){
+    $("keyBox").hidden = false; $("meta").hidden = false;
+    $("keyTx").textContent = fmtKey(p.chave);
+    $("mSerie").textContent = p.serie; $("mData").textContent = fmtAamm(p.aamm); $("mCnpj").textContent = fmtCnpj(p.cnpj);
+  } else {
+    $("keyBox").hidden = true; $("meta").hidden = true;
+  }
+}
+function applyDoc(p, source){
+  st.key = p; st.nameEdited = false;
+  $("tipo").value = p.tipo; $("numero").value = p.numero;
+  showKey(p);
+  setStatus("ok", (p.tipo === "CTe" ? "CT-e" : p.tipo === "NFe" ? "NF-e" : p.tipo) + " encontrado");
+  setMsg("readMsg", "Lido pelo código de barras. Chave conferida pelo dígito verificador.");
+  refreshName();
+}
+function notFound(){
+  setStatus("warn", "Número não encontrado");
+  setMsg("readMsg", "Não consegui ler o código de barras. Digite o número acima e confira o tipo.", "warn");
+  st.key = null; st.nameEdited = false; $("numero").value = "";
+  showKey(null);
+  refreshName();
+  try{ $("numero").focus(); }catch(e){}
+}
+function renderShots(){
+  const box = $("shots"); box.innerHTML = "";
+  const tot = { frente: 0, verso: 0 }; st.photos.forEach(p => tot[p.lado]++);
+  const seen = { frente: 0, verso: 0 };
+  st.photos.forEach((ph, i) => {
+    seen[ph.lado]++;
+    const lbl = (ph.lado === "verso" ? "Verso" : "Frente") + (tot[ph.lado] > 1 ? " " + seen[ph.lado] : "");
+    const el = document.createElement("div"); el.className = "shot" + (ph.lado === "verso" ? " verso" : "");
+    const im = document.createElement("img"); im.alt = lbl + ", página " + (i + 1); im.src = ph.thumb;
+    const pg = document.createElement("span"); pg.className = "pg"; pg.textContent = lbl;
+    const acts = document.createElement("div"); acts.className = "acts";
+    const rb = document.createElement("button"); rb.type = "button"; rb.title = "Girar"; rb.setAttribute("aria-label", "Girar página " + (i + 1)); rb.textContent = "⟳";
+    rb.onclick = () => { rotatePh(ph); renderShots(); };
+    im.onclick = () => openEditor(ph);
+    const fl = document.createElement("span"); fl.className = "flt"; fl.textContent = FLT_LABEL[ph.filter] || "";
+    const xb = document.createElement("button"); xb.type = "button"; xb.title = "Remover"; xb.setAttribute("aria-label", "Remover página " + (i + 1)); xb.textContent = "✕";
+    xb.onclick = () => {
+      URL.revokeObjectURL(ph.url); st.photos.splice(i, 1);
+      if (ph.lado === "verso" && !st.photos.some(p => p.lado === "verso")) { $("ressalva").checked = false; refreshName(); }
+      renderShots(); if (!st.photos.length) resetDoc(); refreshSave();
+    };
+    acts.append(rb, xb); el.append(im, pg, fl, acts); box.append(el);
+  });
+  box.hidden = !st.photos.length; $("emptyShots").hidden = !!st.photos.length;
+}
+function resetDoc(){
+  st.key = null; st.nameEdited = false;
+  $("doc").classList.remove("example"); st.example = false;
+  $("numero").value = ""; $("fname").value = ""; showKey(null);
+  setStatus("idle", "Aguardando foto"); setMsg("readMsg", "");
+}
+function showExample(){
+  const p = parseKey(withDv("33" + "2609" + "12345678000190" + "57" + "001" + "000045871" + "1" + "20481736"));
+  st.example = true; $("doc").classList.add("example");
+  $("tipo").value = p.tipo; $("numero").value = p.numero; showKey(p);
+  $("fname").value = "CTe_45871.pdf";
+  setStatus("idle", "Exemplo");
+}
+
+async function addFiles(files, lado){
+  if (!files || !files.length) return;
+  lado = lado || "frente";
+  if (st.example) resetDoc();
+  for (const f of files){
+    try{
+      const { img, url } = await loadImage(f);
+      const ph = { img, url, file: f, rot: 0, lado, crop: FULL(), filter: defFilter, thumb: "" };
+      ph.thumb = renderPhoto(ph, 360).toDataURL("image/jpeg", .7);
+      st.photos.push(ph);
+    }catch(e){ setMsg("readMsg", "Não consegui abrir uma das imagens. Tente outra foto.", "err"); }
+  }
+  const fresh = st.photos[st.photos.length - 1];
+  const autoOpen = () => { if (files.length === 1 && fresh && $("autoEdit").checked) openEditor(fresh); };
+  if (lado === "verso"){ $("ressalva").checked = true; renderShots(); refreshName(); autoOpen(); return; }
+  renderShots(); autoOpen();
+  if (st.key) { refreshSave(); return; }
+  st.reading = true; refreshSave();
+  setStatus("busy", "Lendo código de barras");
+  setMsg("readMsg", "Procurando o código de barras na foto…");
+  let p = null;
+  const fronts = st.photos.filter(x => x.lado === "frente");
+  for (const ph of fronts){ p = await decodePhoto(ph.img); if (p) break; }
+  const cropped = ph => ph.crop && (ph.crop.x0 > 0 || ph.crop.y0 > 0 || ph.crop.x1 < 1 || ph.crop.y1 < 1);
+  if (!p) for (const ph of fronts.filter(cropped)){ p = await decodePhoto(renderPhoto({ ...ph, filter: "original" }, 2400)); if (p) break; }
+  st.reading = false;
+  if (p) applyDoc(p, "barras"); else notFound();
+}
+
+/* ---------- filtros e corte ---------- */
+const FILTERS = [["impressao","Impressão"],["clarear","Clarear"],["cinza","Cinza"],["original","Original"]];
+const FLT_LABEL = Object.fromEntries(FILTERS);
+let defFilter = "impressao";
+try{ const f = localStorage.getItem("filtro"); if (FLT_LABEL[f]) defFilter = f; }catch(e){}
+function pct(hist, n, q){ let a = 0; for (let i = 0; i < 256; i++){ a += hist[i]; if (a >= n * q) return i; } return 255; }
+function shrink(src, w){
+  let c = src;
+  while (c.width / 2 > w){
+    const t = document.createElement("canvas"); t.width = Math.round(c.width / 2); t.height = Math.round(c.height / 2);
+    const g = t.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(c, 0, 0, t.width, t.height); c = t;
+  }
+  const t = document.createElement("canvas"); t.width = Math.max(4, w); t.height = Math.max(4, Math.round(src.height * w / src.width));
+  const g = t.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(c, 0, 0, t.width, t.height);
+  return t;
+}
+function applyFilter(c, f){
+  if (!f || f === "original") return c;
+  if (f === "cinza") return enhance(c);
+  const W = c.width, H = c.height, g = c.getContext("2d");
+  const d = g.getImageData(0, 0, W, H), p = d.data, n = W * H;
+  const small = shrink(c, Math.max(8, Math.round(W / 28)));
+  const bgc = document.createElement("canvas"); bgc.width = W; bgc.height = H;
+  const bg = bgc.getContext("2d"); bg.imageSmoothingQuality = "high"; bg.drawImage(small, 0, 0, W, H);
+  const b = bg.getImageData(0, 0, W, H).data;
+  if (f === "clarear"){
+    for (let i = 0; i < p.length; i += 4){
+      for (let ch = 0; ch < 3; ch++){
+        let x = p[i+ch] / Math.max(24, b[i+ch]) / .9; x = Math.max(0, Math.min(1, x));
+        p[i+ch] = Math.pow(x, 1.15) * 255;
+      }
+    }
+  } else {
+    for (let i = 0; i < p.length; i += 4){
+      const y = p[i]*.299 + p[i+1]*.587 + p[i+2]*.114;
+      const by = Math.max(24, b[i]*.299 + b[i+1]*.587 + b[i+2]*.114);
+      let x = (y / by - .58) / (.93 - .58); x = Math.max(0, Math.min(1, x));
+      x = x * x * (3 - 2 * x);
+      p[i] = p[i+1] = p[i+2] = x * 255;
+    }
+  }
+  g.putImageData(d, 0, 0);
+  return c;
+}
+const FULL = () => ({ x0: 0, y0: 0, x1: 1, y1: 1 });
+function rotCrop(k){ return { x0: 1 - k.y1, x1: 1 - k.y0, y0: k.x0, y1: k.x1 }; }
+function rotatePh(ph){ ph.rot = (ph.rot + 90) % 360; ph.crop = rotCrop(ph.crop); ph.thumb = renderPhoto(ph, 360).toDataURL("image/jpeg", .7); }
+function renderPhoto(ph, maxSide){
+  const k0 = ph.crop || FULL();
+  const swap = ph.rot % 180 !== 0;
+  const rw = swap ? ph.img.height : ph.img.width, rh = swap ? ph.img.width : ph.img.height;
+  const cw = (k0.x1 - k0.x0) * rw, chh = (k0.y1 - k0.y0) * rh;
+  const k = Math.min(1, maxSide / Math.max(cw, chh));
+  const full = toCanvas(ph.img, Math.max(rw, rh) * k, ph.rot);
+  const sx = Math.round(k0.x0 * full.width), sy = Math.round(k0.y0 * full.height);
+  const sw = Math.max(1, Math.round((k0.x1 - k0.x0) * full.width)), sh = Math.max(1, Math.round((k0.y1 - k0.y0) * full.height));
+  const out = document.createElement("canvas"); out.width = sw; out.height = sh;
+  out.getContext("2d").drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh);
+  return applyFilter(out, ph.filter);
+}
+
+async function rereadAfterCrop(ph){
+  st.reading = true; refreshSave();
+  setStatus("busy", "Lendo código de barras"); setMsg("readMsg", "Procurando o código de barras na foto cortada…");
+  const p = await decodePhoto(renderPhoto({ ...ph, filter: "original" }, 2400));
+  st.reading = false;
+  if (p) applyDoc(p, "barras");
+  else if (!$("numero").value) notFound();
+  else { setStatus("warn", "Confira o número"); setMsg("readMsg", "Não consegui ler o código de barras. Confira o número digitado.", "warn"); refreshSave(); }
+}
+
+/* ---------- editor ---------- */
+const ED_M = 16;
+const ed = { ph: null, rot: 0, crop: null, filter: "", base: null, view: null, drag: null, box: null };
+function edBuild(){
+  ed.base = toCanvas(ed.ph.img, 1100, ed.rot);
+  const v = document.createElement("canvas"); v.width = ed.base.width; v.height = ed.base.height;
+  v.getContext("2d").drawImage(ed.base, 0, 0);
+  ed.view = applyFilter(v, ed.filter);
+  edLayout();
+}
+function edLayout(){
+  const stage = $("edStage"), cv = $("edCv");
+  const aw = Math.max(50, stage.clientWidth - 24 - 2 * ED_M), ah = Math.max(50, stage.clientHeight - 16 - 2 * ED_M);
+  const s = Math.min(aw / ed.base.width, ah / ed.base.height);
+  const iw = Math.round(ed.base.width * s), ih = Math.round(ed.base.height * s);
+  const dpr = window.devicePixelRatio || 1;
+  cv.style.width = (iw + 2 * ED_M) + "px"; cv.style.height = (ih + 2 * ED_M) + "px";
+  cv.width = Math.round((iw + 2 * ED_M) * dpr); cv.height = Math.round((ih + 2 * ED_M) * dpr);
+  ed.box = { iw, ih, dpr };
+  edDraw();
+}
+function edDraw(){
+  const cv = $("edCv"), g = cv.getContext("2d"), { iw, ih, dpr } = ed.box, k = ed.crop;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, iw + 2 * ED_M, ih + 2 * ED_M);
+  g.drawImage(ed.view, ED_M, ED_M, iw, ih);
+  const x0 = ED_M + k.x0 * iw, y0 = ED_M + k.y0 * ih, x1 = ED_M + k.x1 * iw, y1 = ED_M + k.y1 * ih;
+  g.fillStyle = "rgba(0,0,0,.55)";
+  g.fillRect(ED_M, ED_M, iw, y0 - ED_M); g.fillRect(ED_M, y1, iw, ED_M + ih - y1);
+  g.fillRect(ED_M, y0, x0 - ED_M, y1 - y0); g.fillRect(x1, y0, ED_M + iw - x1, y1 - y0);
+  g.strokeStyle = "#FFFFFF"; g.lineWidth = 2; g.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  g.strokeStyle = "rgba(255,255,255,.35)"; g.lineWidth = 1;
+  for (const t of [1/3, 2/3]){
+    g.beginPath(); g.moveTo(x0 + (x1 - x0) * t, y0); g.lineTo(x0 + (x1 - x0) * t, y1); g.stroke();
+    g.beginPath(); g.moveTo(x0, y0 + (y1 - y0) * t); g.lineTo(x1, y0 + (y1 - y0) * t); g.stroke();
+  }
+  for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]){
+    g.beginPath(); g.arc(x, y, 10, 0, Math.PI * 2); g.fillStyle = "#FFFFFF"; g.fill();
+    g.lineWidth = 3; g.strokeStyle = "#2447A3"; g.stroke();
+  }
+}
+function edPos(e){
+  const r = $("edCv").getBoundingClientRect();
+  return { x: (e.clientX - r.left - ED_M) / ed.box.iw, y: (e.clientY - r.top - ED_M) / ed.box.ih };
+}
+function edDown(e){
+  const p = edPos(e), k = ed.crop, tx = 30 / ed.box.iw, ty = 30 / ed.box.ih;
+  const near = (a, b, t) => Math.abs(a - b) <= t;
+  let mode = null;
+  if (near(p.x, k.x0, tx) && near(p.y, k.y0, ty)) mode = "tl";
+  else if (near(p.x, k.x1, tx) && near(p.y, k.y0, ty)) mode = "tr";
+  else if (near(p.x, k.x0, tx) && near(p.y, k.y1, ty)) mode = "bl";
+  else if (near(p.x, k.x1, tx) && near(p.y, k.y1, ty)) mode = "br";
+  else if (p.x > k.x0 && p.x < k.x1 && p.y > k.y0 && p.y < k.y1) mode = "move";
+  if (!mode) return;
+  e.preventDefault();
+  ed.drag = { mode, p, k: { ...k } };
+  try{ $("edCv").setPointerCapture(e.pointerId); }catch(err){}
+}
+function edMove(e){
+  if (!ed.drag) return;
+  e.preventDefault();
+  const p = edPos(e), d = ed.drag, k = { ...d.k }, mn = .08, cl = v => Math.max(0, Math.min(1, v));
+  const dx = p.x - d.p.x, dy = p.y - d.p.y;
+  if (d.mode === "move"){
+    const w = k.x1 - k.x0, h = k.y1 - k.y0;
+    k.x0 = Math.max(0, Math.min(1 - w, k.x0 + dx)); k.y0 = Math.max(0, Math.min(1 - h, k.y0 + dy));
+    k.x1 = k.x0 + w; k.y1 = k.y0 + h;
+  } else {
+    if (d.mode[1] === "l") k.x0 = Math.min(cl(p.x), k.x1 - mn); else k.x1 = Math.max(cl(p.x), k.x0 + mn);
+    if (d.mode[0] === "t") k.y0 = Math.min(cl(p.y), k.y1 - mn); else k.y1 = Math.max(cl(p.y), k.y0 + mn);
+  }
+  ed.crop = k; edDraw();
+}
+function edUp(){ ed.drag = null; }
+function edFilters(){
+  const box = $("edFilters"); box.innerHTML = "";
+  FILTERS.forEach(([v, l]) => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "ed-chip"; b.textContent = l;
+    b.setAttribute("aria-pressed", String(ed.filter === v));
+    b.onclick = () => { ed.filter = v; edFilters(); edBuild(); };
+    box.append(b);
+  });
+}
+function openEditor(ph){
+  ed.ph = ph; ed.rot = ph.rot; ed.crop = { ...(ph.crop || FULL()) }; ed.filter = ph.filter;
+  $("edTitle").textContent = "Ajustar " + (ph.lado === "verso" ? "verso" : "frente");
+  $("ed").hidden = false; document.body.style.overflow = "hidden";
+  edFilters();
+  requestAnimationFrame(edBuild);
+}
+function closeEditor(){ $("ed").hidden = true; document.body.style.overflow = ""; ed.ph = null; ed.base = ed.view = null; }
+$("edCv").addEventListener("pointerdown", edDown);
+$("edCv").addEventListener("pointermove", edMove);
+$("edCv").addEventListener("pointerup", edUp);
+$("edCv").addEventListener("pointercancel", edUp);
+window.addEventListener("resize", () => { if (ed.ph && ed.base) edLayout(); });
+$("edCancel").onclick = closeEditor;
+$("edRot").onclick = () => { ed.rot = (ed.rot + 90) % 360; ed.crop = rotCrop(ed.crop); edBuild(); };
+$("edFull").onclick = () => { ed.crop = FULL(); edDraw(); };
+$("edOk").onclick = () => {
+  const ph = ed.ph; if (!ph) return closeEditor();
+  ph.rot = ed.rot; ph.crop = ed.crop; ph.filter = ed.filter;
+  defFilter = ed.filter; try{ localStorage.setItem("filtro", defFilter); }catch(e){}
+  ph.thumb = renderPhoto(ph, 360).toDataURL("image/jpeg", .7);
+  closeEditor(); renderShots();
+  if (!st.key && !st.reading && ph.lado === "frente") rereadAfterCrop(ph);
+};
+$("edDel").onclick = () => {
+  const i = st.photos.indexOf(ed.ph); const ph = ed.ph; closeEditor();
+  if (i >= 0){
+    URL.revokeObjectURL(ph.url); st.photos.splice(i, 1);
+    if (ph.lado === "verso" && !st.photos.some(p => p.lado === "verso")) { $("ressalva").checked = false; refreshName(); }
+    renderShots(); if (!st.photos.length) resetDoc(); refreshSave();
+  }
+};
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("ed").hidden) closeEditor(); });
+
+/* ---------- PDF ---------- */
+async function savePdf(){
+  const name = $("fname").value.trim().replace(/[\\/:*?"<>|]+/g, "-");
+  const fname = /\.pdf$/i.test(name) ? name : name + ".pdf";
+  const btn = $("saveBtn"); btn.disabled = true; setMsg("saveMsg", "Gerando PDF…");
+  try{
+    const { jsPDF } = window.jspdf;
+    let pdf = null;
+    const ordered = st.photos.filter(p => p.lado === "frente").concat(st.photos.filter(p => p.lado === "verso"));
+    for (const ph of ordered){
+      const c = renderPhoto(ph, 1800);
+      const land = c.width > c.height;
+      const pw = land ? 297 : 210, phh = land ? 210 : 297, m = 8;
+      if (!pdf) pdf = new jsPDF({ orientation: land ? "landscape" : "portrait", unit: "mm", format: "a4" });
+      else pdf.addPage("a4", land ? "landscape" : "portrait");
+      const k = Math.min((pw - 2*m) / c.width, (phh - 2*m) / c.height);
+      const w = c.width * k, h = c.height * k;
+      pdf.addImage(c.toDataURL("image/jpeg", .78), "JPEG", (pw - w) / 2, (phh - h) / 2, w, h);
+      await tick();
+    }
+    pdf.setProperties({ title: fname.replace(/\.pdf$/i, ""), subject: st.key ? "Chave " + st.key.chave : "" });
+    const blob = pdf.output("blob");
+    await saveFile(blob, fname);
+    const n = ($("numero").value || "").replace(/\D/g, "");
+    st.saved.unshift({ name: fname, tipo: $("tipo").value, numero: n, pages: st.photos.length,
+      versos: st.photos.filter(p => p.lado === "verso").length, at: new Date() });
+    renderSaved();
+    nextDoc();
+    setStatus("ok", "Salvo");
+    setMsg("saveMsg", "Salvo: " + fname + ". Pronto para o próximo documento.");
+  }catch(e){
+    const c = e && e.code;
+    setMsg("saveMsg", c === "declined" ? "Salvamento cancelado." :
+      c === "rate_limited" ? "Já existe uma janela de salvar aberta. Feche-a e tente de novo." :
+      "Não consegui salvar o PDF. Tente de novo.", c === "declined" ? "" : "err");
+  }finally{ btn.disabled = false; refreshSave(); }
+}
+function renderSaved(){
+  const box = $("saved"); box.innerHTML = "";
+  if (!st.saved.length){ const p = document.createElement("p"); p.className = "msg"; p.textContent = "Nenhum PDF salvo ainda."; box.append(p); return; }
+  st.saved.forEach(s => {
+    const r = document.createElement("div"); r.className = "saved-i";
+    const a = document.createElement("span"); a.className = "nm"; a.textContent = s.name + " · " + s.pages + " pág." + (s.versos ? " (com verso)" : "");
+    const b = document.createElement("span"); b.className = "tm"; b.textContent = s.at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    r.append(a, b); box.append(r);
+  });
+}
+function nextDoc(){
+  st.photos.forEach(ph => URL.revokeObjectURL(ph.url));
+  st.photos = []; $("ressalva").checked = false; renderShots(); resetDoc(); setMsg("saveMsg", ""); refreshSave();
+}
+
+/* ---------- eventos ---------- */
+$("camBtn").onclick = () => $("camIn").click();
+$("galBtn").onclick = () => $("galIn").click();
+$("versoBtn").onclick = () => $("versoIn").click();
+$("galVersoBtn").onclick = () => $("galVersoIn").click();
+$("camIn").onchange = e => { addFiles([...e.target.files], "frente"); e.target.value = ""; };
+$("galIn").onchange = e => { addFiles([...e.target.files], "frente"); e.target.value = ""; };
+$("versoIn").onchange = e => { addFiles([...e.target.files], "verso"); e.target.value = ""; };
+$("galVersoIn").onchange = e => { addFiles([...e.target.files], "verso"); e.target.value = ""; };
+$("ressalva").onchange = () => { if (!st.example) refreshName(); };
+$("tipo").onchange = () => { if (st.example) return; refreshName(); };
+$("numero").oninput = () => { if (st.example) return; const v = $("numero").value.replace(/\D/g, ""); if (v !== $("numero").value) $("numero").value = v; refreshName(); };
+$("fname").oninput = () => { st.nameEdited = true; refreshSave(); };
+$("saveBtn").onclick = savePdf;
+$("nextBtn").onclick = nextDoc;
+try{ const s = localStorage.getItem("autoEdit"); if (s !== null) $("autoEdit").checked = s === "1"; }catch(e){}
+$("autoEdit").onchange = () => { try{ localStorage.setItem("autoEdit", $("autoEdit").checked ? "1" : "0"); }catch(e){} };
+
+resetDoc(); renderShots(); refreshSave();
+if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+})();
+</script>
+
+</body>
+</html>
