@@ -94,7 +94,7 @@ h1{font-size:1.45rem;font-weight:700;margin:0;letter-spacing:-.01em;text-wrap:ba
 
 .doc{display:flex;flex-direction:column;gap:12px}
 .doc.example{opacity:.62}
-.fields{display:grid;grid-template-columns:110px 1fr;gap:10px}
+.fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
 label.f{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;min-width:0}
 input[type=text],select{font:inherit;font-size:1rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;width:100%;min-width:0;text-transform:none;letter-spacing:0}
 input.num{font-family:var(--font-mono);font-size:1.25rem;font-weight:600}
@@ -122,7 +122,7 @@ input.num{font-family:var(--font-mono);font-size:1.25rem;font-weight:600}
 <div class="wrap">
   <header>
     <h1>Scanner de Canhotos</h1>
-    <p class="sub">Fotografe o CT-e, a nota ou o canhoto grampeado. O número sai do código de barras e o PDF já vem com o nome certo.</p>
+    <p class="sub">Fotografe o CT-e, a nota ou o canhoto grampeado. O app acha o número da NF e o PDF já vem com o nome certo: NF quando tem canhoto, CT-e quando não tem.</p>
   </header>
 
   <section class="step" aria-labelledby="t1">
@@ -151,16 +151,14 @@ input.num{font-family:var(--font-mono);font-size:1.25rem;font-weight:600}
     <span id="status" class="chip idle"><span class="dot"></span><span id="statusTx">Exemplo</span></span>
     <div id="doc" class="doc">
       <div class="fields">
-        <label class="f" for="tipo">Tipo
+        <label class="f" for="tipo">Salvar como
           <select id="tipo">
+            <option value="NF">NF</option>
             <option value="CTe">CT-e</option>
-            <option value="NFe">NF-e</option>
-            <option value="NFCe">NFC-e</option>
-            <option value="MDFe">MDF-e</option>
           </select>
         </label>
-        <label class="f" for="numero">Número
-          <input type="text" id="numero" class="num" inputmode="numeric" autocomplete="off">
+        <label class="f" for="numero">Nº da NF
+          <input type="text" id="numero" class="num" inputmode="numeric" autocomplete="off" placeholder="ex.: 469952">
         </label>
       </div>
       <div id="keyBox">
@@ -168,7 +166,7 @@ input.num{font-family:var(--font-mono);font-size:1.25rem;font-weight:600}
         <div class="key" id="keyTx"></div>
       </div>
       <div class="meta" id="meta">
-        <div><span>Série</span><span id="mSerie">–</span></div>
+        <div><span>Documento</span><span id="mSerie">–</span></div>
         <div><span>Emissão</span><span id="mData">–</span></div>
         <div><span>CNPJ emitente</span><span id="mCnpj">–</span></div>
       </div>
@@ -217,6 +215,7 @@ input.num{font-family:var(--font-mono);font-size:1.25rem;font-weight:600}
 
 <script src="zxing.min.js"></script>
 <script src="jspdf.umd.min.js"></script>
+<script src="ocr/tesseract.min.js"></script>
 <script>
 (function(){
 const $ = id => document.getElementById(id);
@@ -425,13 +424,186 @@ async function decodePhoto(img){
   return null;
 }
 
+/* ---------- leitura por OCR (chaves impressas e canhoto) ---------- */
+const UFS = new Set(["11","12","13","14","15","16","17","21","22","23","24","25","26","27","28","29","31","32","33","35","41","42","43","50","51","52","53"]);
+function cnpjOk(c){
+  if (!/^\d{14}$/.test(c) || /^(\d)\1+$/.test(c)) return false;
+  const calc = n => { const w = n === 12 ? [5,4,3,2,9,8,7,6,5,4,3,2] : [6,5,4,3,2,9,8,7,6,5,4,3,2];
+    let s = 0; for (let i = 0; i < n; i++) s += (+c[i]) * w[i]; const r = s % 11; return r < 2 ? 0 : 11 - r; };
+  return calc(12) === +c[12] && calc(13) === +c[13];
+}
+function keysFromText(text){
+  const out = [];
+  for (const line of String(text).split(/\n/)){
+    const d = line.replace(/\D/g, "");
+    for (let i = 0; i + 44 <= d.length; i++){
+      const k = d.slice(i, i + 44), mod = k.slice(20, 22);
+      if (!["55","57","65","67"].includes(mod) || !cnpjOk(k.slice(6, 20))) continue;
+      const exact = dvOk(k) && UFS.has(k.slice(0, 2));
+      out.push({ chave: k, modelo: mod, tipo: MODELOS[mod], numero: String(parseInt(k.slice(25, 34), 10)), exact });
+    }
+  }
+  const seen = new Map();
+  out.forEach(k => { const id = k.modelo + k.numero; const o = seen.get(id); if (!o || (!o.exact && k.exact)) seen.set(id, k); });
+  return [...seen.values()];
+}
+let ocrWorker = null, ocrBusy = Promise.resolve();
+function ocrAvailable(){ return typeof Tesseract !== "undefined"; }
+function getOcr(){
+  if (!ocrWorker) ocrWorker = Tesseract.createWorker("eng", 1, { workerPath: "ocr/worker.min.js", corePath: "ocr/", langPath: "ocr/", gzip: true })
+    .catch(e => { ocrWorker = null; throw e; });
+  return ocrWorker;
+}
+async function ocr(canvas, psm){
+  const run = ocrBusy.then(async () => {
+    const w = await getOcr();
+    await w.setParameters({ tessedit_pageseg_mode: String(psm || 6), tessedit_char_whitelist: "" });
+    const r = await w.recognize(canvas);
+    return r.data;
+  });
+  ocrBusy = run.catch(() => {});
+  return run;
+}
+function sub(src, x0, y0, x1, y1, scale){
+  x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(src.width, x1); y1 = Math.min(src.height, y1);
+  const c = document.createElement("canvas"); c.width = Math.max(1, Math.round((x1 - x0) * scale)); c.height = Math.max(1, Math.round((y1 - y0) * scale));
+  const g = c.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(src, x0, y0, x1 - x0, y1 - y0, 0, 0, c.width, c.height);
+  return c;
+}
+/* Número da NF na linha "NF-E: <chave>" do DACTE, mesmo com dígitos mal lidos no começo da chave */
+function nfFromLine(text){
+  const out = [];
+  for (const line of String(text).split(/\n/)){
+    for (const run of line.match(/\d[\d .\-]{34,}\d/g) || []){
+      const d = run.replace(/\D/g, "");
+      if (d.length < 36) continue;
+      let best = null;
+      for (const m of d.matchAll(/(?=(55|65)(\d{3})(\d{9}))/g)){
+        const score = Math.abs(m.index - 20);
+        if (score <= 6 && (!best || score < best.score)) best = { score, numero: String(parseInt(m[3], 10)) };
+      }
+      if (best && best.numero !== "0") out.push(best.numero);
+    }
+  }
+  return out;
+}
+function boxScore(b){ const w = b.x1 - b.x0, h = b.y1 - b.y0; return b.sum * Math.min(6, w / Math.max(h, .001)); }
+/* Procura as chaves impressas (CT-e e NF-e) e o número do canhoto. onStep(texto) mostra o progresso. */
+async function readByOcr(img, onStep, known){
+  if (!ocrAvailable()) return null;
+  const cands = [];
+  for (const r of [0, 90]) locateBarcodes(img, r).forEach(b => cands.push({ r, b, s: boxScore(b) }));
+  cands.sort((a, c) => c.s - a.s);
+  const step = t => onStep && onStep(t);
+  for (const c of cands.slice(0, 2)){
+    for (const flip of [false, true]){
+      const rot = (c.r + (flip ? 180 : 0)) % 360;
+      const b = flip ? { x0: 1 - c.b.x1, y0: 1 - c.b.y1, x1: 1 - c.b.x0, y1: 1 - c.b.y0 } : c.b;
+      const page = toCanvas(img, 2600, rot), W = page.width, H = page.height, bw = (b.x1 - b.x0) * W;
+      step("Lendo a chave impressa…");
+      const strip = sub(page, b.x0 * W - bw * .06, b.y1 * H - bw * .03, b.x1 * W + bw * .06, b.y1 * H + bw * .11, 1);
+      const sc = Math.min(3, 1800 / strip.width);
+      const p0 = await ocr(enhance(sub(strip, 0, 0, strip.width, strip.height, sc)), 6);
+      let keys = keysFromText(p0.text), tentative = false;
+      if (!keys.length && known){ keys = [known]; tentative = true; }
+      if (!keys.length) continue;
+      const own = keys.find(k => k.modelo === "57" || k.modelo === "67") || keys[0];
+      if (own.modelo === "55" || own.modelo === "65") return { rot, cte: null, nfs: [own.numero], nfExact: own.exact, canhoto: null };
+      step("Procurando o canhoto…");
+      const top = sub(page, 0, 0, W, b.y0 * H + bw * .02, 1);
+      const p3 = await ocr(enhance(top), 3);
+      const txt = p3.text.replace(/[ \t]+/g, " ");
+      let canhoto = null;
+      const m = txt.match(/N[º°o]?\s*[.:]?\s*((?:\d{1,3}\.)?\d{3}\.\d{3})(?!\d)/);
+      if (m) canhoto = String(parseInt(m[1].replace(/\D/g, ""), 10));
+      step("Lendo o número da nota…");
+      const region = sub(page, b.x0 * W - bw * .35, b.y1 * H + bw * .1, b.x1 * W + bw * .25, b.y1 * H + bw * 1.15, 1);
+      const p1 = await ocr(enhance(sub(region, 0, 0, region.width, region.height, 1)), 6);
+      const nfs = new Set(), exact = new Set();
+      const add = t => {
+        keysFromText(t).filter(k => k.modelo === "55" || k.modelo === "65").forEach(k => { nfs.add(k.numero); if (k.exact) exact.add(k.numero); });
+        nfFromLine(t).forEach(n => nfs.add(n));
+      };
+      add(p1.text);
+      if (!(canhoto && nfs.has(canhoto))){
+        const lines = (p1.lines || []).filter(l => (l.text.match(/\d/g) || []).length >= 12 && !l.text.replace(/\D/g, "").includes(own.chave.slice(6, 20)));
+        for (const l of lines.slice(0, 5)){
+          const bb = l.bbox, lh = bb.y1 - bb.y0, s2 = Math.min(3.5, Math.max(1.5, 48 / Math.max(10, lh)));
+          add((await ocr(enhance(sub(region, bb.x0 - 12, bb.y0 - lh * .35, bb.x1 + 12, bb.y1 + lh * .35, s2)), 7)).text);
+        }
+      }
+      if (tentative && !nfs.size && !canhoto) continue;
+      if (!canhoto) for (const n of nfs){ if (txt.includes(Number(n).toLocaleString("pt-BR"))) { canhoto = n; break; } }
+      return { rot, cte: own, nfs: [...nfs], nfExact: nfs.size > 0 && [...nfs].every(n => exact.has(n) || n === canhoto), canhoto };
+    }
+  }
+  return null;
+}
+function keyInfo(k){
+  return { chave: k, uf: k.slice(0,2), aamm: k.slice(2,6), cnpj: k.slice(6,20), modelo: k.slice(20,22),
+    serie: String(parseInt(k.slice(22,25),10)), numero: String(parseInt(k.slice(25,34),10)), tipo: MODELOS[k.slice(20,22)] || "NFe" };
+}
+const isNota = d => d && (d.modelo === "55" || d.modelo === "65");
+/* Lê uma foto: código de barras primeiro, depois as chaves impressas e o canhoto (OCR). */
+async function identify(src){
+  setStatus("busy", "Lendo código de barras"); setMsg("readMsg", "Procurando o código de barras na foto…");
+  const p = await decodePhoto(src);
+  if (isNota(p)) return { doc: p, nums: [p.numero], canhoto: null, exact: true, via: "barras" };
+  let r = null;
+  if (ocrAvailable()){
+    setStatus("busy", "Lendo a nota");
+    try{ r = await readByOcr(src, t => setMsg("readMsg", t), p ? { ...p, exact: true } : null); }catch(e){ r = null; }
+  }
+  if (!r) return p ? { doc: p, nums: [], canhoto: null, exact: false, via: "barras" } : null;
+  const doc = p || (r.cte ? keyInfo(r.cte.chave) : null);
+  let nums = r.nfs.slice();
+  if (!nums.length && r.canhoto) nums = [r.canhoto];
+  if (!doc && nums.length === 1 && !r.cte) return { doc: null, nums, canhoto: null, exact: r.nfExact, via: "ocr", nota: true };
+  return { doc, nums, canhoto: r.canhoto, exact: r.nfExact || (r.canhoto && nums.length === 1 && nums[0] === r.canhoto), via: "ocr" };
+}
+function applyResult(res){
+  st.key = res.doc || null; st.nameEdited = false;
+  const nota = res.nota || isNota(res.doc);
+  showKey(res.doc || null);
+  const tipo = nota || res.canhoto ? "NF" : "CTe";
+  if (!(st.userNum && $("numero").value)){
+    $("tipo").value = tipo;
+    $("numero").value = res.nums.join("-");
+  }
+  const docTx = res.doc ? (nota ? "NF-e " : "CT-e ") + res.doc.numero : "";
+  if (!res.nums.length){
+    setStatus("warn", "Digite o número da NF");
+    setMsg("readMsg", (docTx ? docTx + " lido. " : "") + "Não consegui ler o número da NF. Digite o número que aparece no canhoto ou nas chaves do CT-e.", "warn");
+    try{ $("numero").focus(); }catch(e){}
+  } else {
+    const nTx = res.nums.length > 1 ? "NFs " + res.nums.join(", ") : "NF " + res.nums[0];
+    setStatus(res.exact ? "ok" : "warn", res.exact ? nTx + " encontrada" : "Confira o número da NF");
+    const parts = [];
+    if (docTx && !nota) parts.push(docTx + " lido.");
+    if (nota) parts.push("Nota lida pelo " + (res.via === "barras" ? "código de barras" : "texto da chave") + ".");
+    else if (res.canhoto) parts.push("Canhoto encontrado: será salvo como NF.");
+    else parts.push("Não vi canhoto na foto: será salvo como CT-e. Se tiver canhoto, troque para NF.");
+    if (!res.exact) parts.push("Confira o número com o papel antes de salvar.");
+    setMsg("readMsg", parts.join(" "), res.exact ? "" : "warn");
+  }
+  refreshName();
+}
+async function readPhotos(srcs){
+  st.reading = true; refreshSave();
+  let res = null;
+  for (const s of srcs){ res = await identify(s); if (res && (res.nums.length || res.doc)) { if (res.nums.length) break; } }
+  st.reading = false;
+  if (res) applyResult(res); else notFound();
+  return res;
+}
+
 /* ---------- interface ---------- */
 function setStatus(kind, text){
   const s = $("status"); s.className = "chip " + kind; $("statusTx").textContent = text;
 }
 function setMsg(id, text, kind){ const m = $(id); m.textContent = text || ""; m.className = "msg" + (kind ? " " + kind : ""); }
 function buildName(){
-  const n = ($("numero").value || "").replace(/\D/g, "");
+  const n = ($("numero").value || "").replace(/[^\d-]/g, "").replace(/^-+|-+$/g, "");
   return n ? `${$("tipo").value}_${n}${$("ressalva").checked ? "_RESSALVA" : ""}.pdf` : "";
 }
 function refreshName(){ if (!st.nameEdited) $("fname").value = buildName(); refreshSave(); }
@@ -441,7 +613,7 @@ function refreshSave(){
   const ok = !st.example && st.photos.length > 0 && /\d/.test($("numero").value) && $("fname").value.trim().length > 0 && !st.reading;
   $("saveBtn").disabled = !ok;
   if (!st.example && st.photos.length){
-    const n = ($("numero").value || "").replace(/\D/g, "");
+    const n = ($("numero").value || "").replace(/[^\d-]/g, "");
     const dup = n && st.saved.some(s => s.tipo === $("tipo").value && s.numero === n);
     setMsg("saveMsg", dup ? "Atenção: este número já foi salvo nesta sessão." : "", dup ? "warn" : "");
   }
@@ -450,7 +622,7 @@ function showKey(p){
   if (p){
     $("keyBox").hidden = false; $("meta").hidden = false;
     $("keyTx").textContent = fmtKey(p.chave);
-    $("mSerie").textContent = p.serie; $("mData").textContent = fmtAamm(p.aamm); $("mCnpj").textContent = fmtCnpj(p.cnpj);
+    $("mSerie").textContent = (isNota(p) ? "NF-e " : "CT-e ") + p.numero + " · série " + p.serie; $("mData").textContent = fmtAamm(p.aamm); $("mCnpj").textContent = fmtCnpj(p.cnpj);
   } else {
     $("keyBox").hidden = true; $("meta").hidden = true;
   }
@@ -465,7 +637,7 @@ function applyDoc(p, source){
 }
 function notFound(){
   setStatus("warn", "Número não encontrado");
-  setMsg("readMsg", "Não consegui ler o código de barras. Digite o número acima e confira o tipo.", "warn");
+  setMsg("readMsg", "Não consegui ler o documento. Digite o número da NF acima e escolha NF ou CT-e.", "warn");
   st.key = null; st.nameEdited = false; $("numero").value = "";
   showKey(null);
   refreshName();
@@ -497,7 +669,7 @@ function renderShots(){
   box.hidden = !st.photos.length; $("emptyShots").hidden = !!st.photos.length;
 }
 function resetDoc(){
-  st.key = null; st.nameEdited = false;
+  st.key = null; st.nameEdited = false; st.userNum = false;
   $("doc").classList.remove("example"); st.example = false;
   $("numero").value = ""; $("fname").value = ""; showKey(null);
   setStatus("idle", "Aguardando foto"); setMsg("readMsg", "");
@@ -505,8 +677,8 @@ function resetDoc(){
 function showExample(){
   const p = parseKey(withDv("33" + "2609" + "12345678000190" + "57" + "001" + "000045871" + "1" + "20481736"));
   st.example = true; $("doc").classList.add("example");
-  $("tipo").value = p.tipo; $("numero").value = p.numero; showKey(p);
-  $("fname").value = "CTe_45871.pdf";
+  $("tipo").value = "NF"; $("numero").value = "188709"; showKey(p);
+  $("fname").value = "NF_188709.pdf";
   setStatus("idle", "Exemplo");
 }
 
@@ -527,16 +699,11 @@ async function addFiles(files, lado){
   if (lado === "verso"){ $("ressalva").checked = true; renderShots(); refreshName(); autoOpen(); return; }
   renderShots(); autoOpen();
   if (st.key) { refreshSave(); return; }
-  st.reading = true; refreshSave();
-  setStatus("busy", "Lendo código de barras");
-  setMsg("readMsg", "Procurando o código de barras na foto…");
-  let p = null;
   const fronts = st.photos.filter(x => x.lado === "frente");
-  for (const ph of fronts){ p = await decodePhoto(ph.img); if (p) break; }
+  const res = await readPhotos(fronts.map(ph => ph.img));
   const cropped = ph => ph.crop && (ph.crop.x0 > 0 || ph.crop.y0 > 0 || ph.crop.x1 < 1 || ph.crop.y1 < 1);
-  if (!p) for (const ph of fronts.filter(cropped)){ p = await decodePhoto(renderPhoto({ ...ph, filter: "original" }, 2400)); if (p) break; }
-  st.reading = false;
-  if (p) applyDoc(p, "barras"); else notFound();
+  if ((!res || !res.nums.length) && fronts.some(cropped) && !$("numero").value)
+    await readPhotos(fronts.filter(cropped).map(ph => renderPhoto({ ...ph, filter: "original" }, 2600)));
 }
 
 /* ---------- filtros e corte ---------- */
@@ -601,13 +768,7 @@ function renderPhoto(ph, maxSide){
 }
 
 async function rereadAfterCrop(ph){
-  st.reading = true; refreshSave();
-  setStatus("busy", "Lendo código de barras"); setMsg("readMsg", "Procurando o código de barras na foto cortada…");
-  const p = await decodePhoto(renderPhoto({ ...ph, filter: "original" }, 2400));
-  st.reading = false;
-  if (p) applyDoc(p, "barras");
-  else if (!$("numero").value) notFound();
-  else { setStatus("warn", "Confira o número"); setMsg("readMsg", "Não consegui ler o código de barras. Confira o número digitado.", "warn"); refreshSave(); }
+  await readPhotos([renderPhoto({ ...ph, filter: "original" }, 2600)]);
 }
 
 /* ---------- editor ---------- */
@@ -716,7 +877,7 @@ $("edOk").onclick = () => {
   defFilter = ed.filter; try{ localStorage.setItem("filtro", defFilter); }catch(e){}
   ph.thumb = renderPhoto(ph, 360).toDataURL("image/jpeg", .7);
   closeEditor(); renderShots();
-  if (!st.key && !st.reading && ph.lado === "frente") rereadAfterCrop(ph);
+  if ((!st.key || !$("numero").value) && !st.reading && ph.lado === "frente") rereadAfterCrop(ph);
 };
 $("edDel").onclick = () => {
   const i = st.photos.indexOf(ed.ph); const ph = ed.ph; closeEditor();
@@ -751,7 +912,7 @@ async function savePdf(){
     pdf.setProperties({ title: fname.replace(/\.pdf$/i, ""), subject: st.key ? "Chave " + st.key.chave : "" });
     const blob = pdf.output("blob");
     await saveFile(blob, fname);
-    const n = ($("numero").value || "").replace(/\D/g, "");
+    const n = ($("numero").value || "").replace(/[^\d-]/g, "");
     st.saved.unshift({ name: fname, tipo: $("tipo").value, numero: n, pages: st.photos.length,
       versos: st.photos.filter(p => p.lado === "verso").length, at: new Date() });
     renderSaved();
@@ -791,7 +952,7 @@ $("versoIn").onchange = e => { addFiles([...e.target.files], "verso"); e.target.
 $("galVersoIn").onchange = e => { addFiles([...e.target.files], "verso"); e.target.value = ""; };
 $("ressalva").onchange = () => { if (!st.example) refreshName(); };
 $("tipo").onchange = () => { if (st.example) return; refreshName(); };
-$("numero").oninput = () => { if (st.example) return; const v = $("numero").value.replace(/\D/g, ""); if (v !== $("numero").value) $("numero").value = v; refreshName(); };
+$("numero").oninput = () => { if (st.example) return; const v = $("numero").value.replace(/[^\d-]/g, ""); if (v !== $("numero").value) $("numero").value = v; st.userNum = !!v; refreshName(); };
 $("fname").oninput = () => { st.nameEdited = true; refreshSave(); };
 $("saveBtn").onclick = savePdf;
 $("nextBtn").onclick = nextDoc;
@@ -799,6 +960,7 @@ try{ const s = localStorage.getItem("autoEdit"); if (s !== null) $("autoEdit").c
 $("autoEdit").onchange = () => { try{ localStorage.setItem("autoEdit", $("autoEdit").checked ? "1" : "0"); }catch(e){} };
 
 resetDoc(); renderShots(); refreshSave();
+if (ocrAvailable()) setTimeout(() => { getOcr().catch(() => {}); }, 2500);
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 })();
 </script>
