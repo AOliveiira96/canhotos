@@ -96,7 +96,7 @@ h1{font-size:1.45rem;font-weight:700;margin:0;letter-spacing:-.01em;text-wrap:ba
 .doc.example{opacity:.62}
 .fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
 label.f{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;min-width:0}
-input[type=text],select{font:inherit;font-size:1rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;width:100%;min-width:0;text-transform:none;letter-spacing:0}
+input[type=text],input[type=month],select{font:inherit;font-size:1rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;width:100%;min-width:0;text-transform:none;letter-spacing:0}
 input.num{font-family:var(--font-mono);font-size:1.25rem;font-weight:600}
 .key{font-family:var(--font-mono);font-size:.82rem;line-height:1.7;word-spacing:.15em;background:var(--bg);border-radius:8px;padding:8px 10px;overflow-wrap:anywhere;color:var(--ink)}
 .key-l{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
@@ -176,6 +176,15 @@ input.num{font-family:var(--font-mono);font-size:1.25rem;font-weight:600}
 
   <section class="step" aria-labelledby="t3">
     <div class="step-h"><span class="step-n">3</span><h2 class="step-t" id="t3">Salvar PDF</h2></div>
+    <div class="fields">
+      <label class="f" for="cliente">Cliente
+        <select id="cliente"></select>
+      </label>
+      <label class="f" for="mes">Mês de emissão
+        <input type="month" id="mes">
+      </label>
+    </div>
+    <p class="msg" id="pastaMsg"></p>
     <label class="f" for="fname">Nome do arquivo
       <input type="text" id="fname" autocomplete="off">
     </label>
@@ -508,7 +517,7 @@ async function readByOcr(img, onStep, known){
       if (!keys.length && known){ keys = [known]; tentative = true; }
       if (!keys.length) continue;
       const own = keys.find(k => k.modelo === "57" || k.modelo === "67") || keys[0];
-      if (own.modelo === "55" || own.modelo === "65") return { rot, cte: null, nfs: [own.numero], nfExact: own.exact, canhoto: null };
+      if (own.modelo === "55" || own.modelo === "65") return { rot, cte: null, nfs: [own.numero], nfExact: own.exact, canhoto: null, cnpjs: own.exact ? [own.chave.slice(6, 20)] : [], notaKey: own };
       step("Procurando o canhoto…");
       const top = sub(page, 0, 0, W, b.y0 * H + bw * .02, 1);
       const p3 = await ocr(enhance(top), 3);
@@ -519,9 +528,9 @@ async function readByOcr(img, onStep, known){
       step("Lendo o número da nota…");
       const region = sub(page, b.x0 * W - bw * .35, b.y1 * H + bw * .1, b.x1 * W + bw * .25, b.y1 * H + bw * 1.15, 1);
       const p1 = await ocr(enhance(sub(region, 0, 0, region.width, region.height, 1)), 6);
-      const nfs = new Set(), exact = new Set();
+      const nfs = new Set(), exact = new Set(), cnpjs = new Set();
       const add = t => {
-        keysFromText(t).filter(k => k.modelo === "55" || k.modelo === "65").forEach(k => { nfs.add(k.numero); if (k.exact) exact.add(k.numero); });
+        keysFromText(t).filter(k => k.modelo === "55" || k.modelo === "65").forEach(k => { nfs.add(k.numero); if (k.exact){ exact.add(k.numero); cnpjs.add(k.chave.slice(6, 20)); } });
         nfFromLine(t).forEach(n => nfs.add(n));
       };
       add(p1.text);
@@ -534,7 +543,7 @@ async function readByOcr(img, onStep, known){
       }
       if (tentative && !nfs.size && !canhoto) continue;
       if (!canhoto) for (const n of nfs){ if (txt.includes(Number(n).toLocaleString("pt-BR"))) { canhoto = n; break; } }
-      return { rot, cte: own, nfs: [...nfs], nfExact: nfs.size > 0 && [...nfs].every(n => exact.has(n) || n === canhoto), canhoto };
+      return { rot, cte: own, nfs: [...nfs], nfExact: nfs.size > 0 && [...nfs].every(n => exact.has(n) || n === canhoto), canhoto, cnpjs: [...cnpjs] };
     }
   }
   return null;
@@ -548,7 +557,7 @@ const isNota = d => d && (d.modelo === "55" || d.modelo === "65");
 async function identify(src){
   setStatus("busy", "Lendo código de barras"); setMsg("readMsg", "Procurando o código de barras na foto…");
   const p = await decodePhoto(src);
-  if (isNota(p)) return { doc: p, nums: [p.numero], canhoto: null, exact: true, via: "barras" };
+  if (isNota(p)) return { doc: p, nums: [p.numero], canhoto: null, exact: true, via: "barras", cnpjs: [p.cnpj] };
   let r = null;
   if (ocrAvailable()){
     setStatus("busy", "Lendo a nota");
@@ -558,8 +567,8 @@ async function identify(src){
   const doc = p || (r.cte ? keyInfo(r.cte.chave) : null);
   let nums = r.nfs.slice();
   if (!nums.length && r.canhoto) nums = [r.canhoto];
-  if (!doc && nums.length === 1 && !r.cte) return { doc: null, nums, canhoto: null, exact: r.nfExact, via: "ocr", nota: true };
-  return { doc, nums, canhoto: r.canhoto, exact: r.nfExact || (r.canhoto && nums.length === 1 && nums[0] === r.canhoto), via: "ocr" };
+  if (!doc && !r.cte && r.notaKey) return { doc: keyInfo(r.notaKey.chave), nums, canhoto: null, exact: r.nfExact, via: "ocr", nota: true, cnpjs: r.cnpjs || [] };
+  return { doc, nums, canhoto: r.canhoto, exact: r.nfExact || (r.canhoto && nums.length === 1 && nums[0] === r.canhoto), via: "ocr", cnpjs: r.cnpjs || [] };
 }
 function applyResult(res){
   st.key = res.doc || null; st.nameEdited = false;
@@ -570,6 +579,10 @@ function applyResult(res){
     $("tipo").value = tipo;
     $("numero").value = res.nums.join("-");
   }
+  const mk = mesDaChave(res.doc && res.doc.aamm);
+  if (mk && !st.userMes) $("mes").value = mk;
+  const cli = clientePorCnpj(res.cnpjs);
+  if (cli && !st.userCliente) $("cliente").value = cli;
   const docTx = res.doc ? (nota ? "NF-e " : "CT-e ") + res.doc.numero : "";
   if (!res.nums.length){
     setStatus("warn", "Digite o número da NF");
@@ -597,6 +610,51 @@ async function readPhotos(srcs){
   return res;
 }
 
+/* ---------- cliente e mês (pastas) ---------- */
+const CLIENTES_PADRAO = [
+  { "nome": "Farmarin", "cnpj": [] },
+  { "nome": "Nipro", "cnpj": [] },
+  { "nome": "Nadir", "cnpj": [] },
+  { "nome": "Rosetto", "cnpj": [] },
+  { "nome": "Molin", "cnpj": [] },
+  { "nome": "Especifarma", "cnpj": [] },
+  { "nome": "Outros", "cnpj": [] }
+];
+let clientes = CLIENTES_PADRAO;
+const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+const pastaNome = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9 .&-]+/g, " ").replace(/\s+/g, " ").trim();
+function renderClientes(){
+  const sel = $("cliente"), cur = sel.value;
+  sel.innerHTML = "";
+  const o0 = document.createElement("option"); o0.value = ""; o0.textContent = "Escolha o cliente"; sel.append(o0);
+  clientes.forEach(c => { const o = document.createElement("option"); o.value = pastaNome(c.nome); o.textContent = c.nome; sel.append(o); });
+  let last = ""; try{ last = localStorage.getItem("cliente") || ""; }catch(e){}
+  sel.value = cur || last; if (sel.value !== (cur || last)) sel.value = "";
+}
+async function loadClientes(){
+  try{
+    const r = await fetch("clientes.json", { cache: "no-cache" });
+    if (r.ok){ const j = await r.json(); if (Array.isArray(j) && j.length) clientes = j.filter(c => c && c.nome); }
+  }catch(e){}
+  renderClientes(); refreshName();
+}
+function clientePorCnpj(list){
+  for (const cnpj of list || []){
+    const raiz = String(cnpj).replace(/\D/g, "").slice(0, 8);
+    const c = clientes.find(c => (c.cnpj || []).some(x => String(x).replace(/\D/g, "").slice(0, 8) === raiz));
+    if (c) return pastaNome(c.nome);
+  }
+  return "";
+}
+function mesAtual(){ const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
+function mesDaChave(aamm){ return aamm && /^\d{4}$/.test(aamm) ? "20" + aamm.slice(0, 2) + "-" + aamm.slice(2, 4) : ""; }
+function pastaDestino(){
+  const c = $("cliente").value, m = $("mes").value;
+  if (!c || !/^\d{4}-\d{2}$/.test(m)) return "";
+  const mm = +m.slice(5, 7);
+  return [c, m.slice(0, 4), String(mm).padStart(2, "0") + " - " + MESES[mm - 1], $("tipo").value].join(" / ");
+}
+
 /* ---------- interface ---------- */
 function setStatus(kind, text){
   const s = $("status"); s.className = "chip " + kind; $("statusTx").textContent = text;
@@ -604,13 +662,19 @@ function setStatus(kind, text){
 function setMsg(id, text, kind){ const m = $(id); m.textContent = text || ""; m.className = "msg" + (kind ? " " + kind : ""); }
 function buildName(){
   const n = ($("numero").value || "").replace(/[^\d-]/g, "").replace(/^-+|-+$/g, "");
-  return n ? `${$("tipo").value}_${n}${$("ressalva").checked ? "_RESSALVA" : ""}.pdf` : "";
+  if (!n) return "";
+  const c = $("cliente").value, m = $("mes").value;
+  const extra = c && /^\d{4}-\d{2}$/.test(m) ? `__${c}__${m}` : "";
+  return `${$("tipo").value}_${n}${$("ressalva").checked ? "_RESSALVA" : ""}${extra}.pdf`;
 }
 function refreshName(){ if (!st.nameEdited) $("fname").value = buildName(); refreshSave(); }
 function refreshSave(){
   const hasFront = st.photos.some(p => p.lado === "frente");
   $("versoBtn").disabled = !hasFront; $("galVersoBtn").disabled = !hasFront;
-  const ok = !st.example && st.photos.length > 0 && /\d/.test($("numero").value) && $("fname").value.trim().length > 0 && !st.reading;
+  const pasta = pastaDestino();
+  $("pastaMsg").textContent = pasta ? "Vai para a pasta: " + pasta : "Escolha o cliente e o mês para o arquivo ir para a pasta certa.";
+  $("pastaMsg").className = "msg" + (pasta ? "" : " warn");
+  const ok = !st.example && st.photos.length > 0 && /\d/.test($("numero").value) && $("fname").value.trim().length > 0 && !st.reading && !!pasta;
   $("saveBtn").disabled = !ok;
   if (!st.example && st.photos.length){
     const n = ($("numero").value || "").replace(/[^\d-]/g, "");
@@ -669,7 +733,8 @@ function renderShots(){
   box.hidden = !st.photos.length; $("emptyShots").hidden = !!st.photos.length;
 }
 function resetDoc(){
-  st.key = null; st.nameEdited = false; st.userNum = false;
+  st.key = null; st.nameEdited = false; st.userNum = false; st.userMes = false; st.userCliente = false;
+  if ($("mes")) $("mes").value = mesAtual();
   $("doc").classList.remove("example"); st.example = false;
   $("numero").value = ""; $("fname").value = ""; showKey(null);
   setStatus("idle", "Aguardando foto"); setMsg("readMsg", "");
@@ -954,12 +1019,14 @@ $("ressalva").onchange = () => { if (!st.example) refreshName(); };
 $("tipo").onchange = () => { if (st.example) return; refreshName(); };
 $("numero").oninput = () => { if (st.example) return; const v = $("numero").value.replace(/[^\d-]/g, ""); if (v !== $("numero").value) $("numero").value = v; st.userNum = !!v; refreshName(); };
 $("fname").oninput = () => { st.nameEdited = true; refreshSave(); };
+$("cliente").onchange = () => { st.userCliente = true; try{ localStorage.setItem("cliente", $("cliente").value); }catch(e){} refreshName(); };
+$("mes").onchange = () => { st.userMes = true; refreshName(); };
 $("saveBtn").onclick = savePdf;
 $("nextBtn").onclick = nextDoc;
 try{ const s = localStorage.getItem("autoEdit"); if (s !== null) $("autoEdit").checked = s === "1"; }catch(e){}
 $("autoEdit").onchange = () => { try{ localStorage.setItem("autoEdit", $("autoEdit").checked ? "1" : "0"); }catch(e){} };
 
-resetDoc(); renderShots(); refreshSave();
+renderClientes(); resetDoc(); renderShots(); refreshSave(); loadClientes();
 if (ocrAvailable()) setTimeout(() => { getOcr().catch(() => {}); }, 2500);
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 })();
