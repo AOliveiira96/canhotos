@@ -16,8 +16,12 @@ Publicado pelo GitHub Pages. Este repositório contém só o código do app, nen
 
 ## Clientes e pastas
 
-O arquivo `clientes.json` lista os clientes que aparecem no app. Para cada cliente, coloque em `cnpj` a raiz do CNPJ (8 primeiros dígitos) para o app reconhecer o cliente sozinho quando ler a chave da NF, por exemplo:
+O arquivo `clientes.json` lista os clientes que aparecem no app. O cliente é escolhido à mão (o app lembra o último). O app não mostra nem usa o CNPJ do emitente.
 
-    { "nome": "Farmarin", "cnpj": ["12345678"] }
+## Privacidade
+
+- Fotos e PDFs são processados só no celular. Nada é enviado a servidor, nem a serviços de IA.
+- A página tem uma política de segurança (Content-Security-Policy) que impede o navegador de enviar dados para qualquer endereço fora deste site.
+- Sem fontes, scripts ou serviços de terceiros: tudo é carregado deste repositório.
 
 O PDF sai como `NF_469952__Farmarin__2026-07.pdf` e o organizador no servidor move para `Canhotos/Farmarin/2026/07 - Julho/NF/NF_469952.pdf`.

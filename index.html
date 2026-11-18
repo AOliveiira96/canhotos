@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; connect-src 'self' blob: data:; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="theme-color" content="#2447A3">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Canhotos">
@@ -12,8 +13,6 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <style>[hidden]{display:none!important}html{color-scheme:light}body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}img{max-width:100%}</style>
 <title>Scanner de Canhotos</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>
 /* Layout: uma coluna de balcão (mobile), três blocos em sequência real: fotos → documento → salvar; lista de salvos abaixo */
 :root{
@@ -168,7 +167,6 @@ input.num{font-family:var(--font-mono);font-size:1.25rem;font-weight:600}
       <div class="meta" id="meta">
         <div><span>Documento</span><span id="mSerie">–</span></div>
         <div><span>Emissão</span><span id="mData">–</span></div>
-        <div><span>CNPJ emitente</span><span id="mCnpj">–</span></div>
       </div>
       <p class="msg" id="readMsg">Este é um exemplo. Tire a primeira foto para ler um documento real.</p>
     </div>
@@ -615,13 +613,13 @@ async function readPhotos(srcs){
 
 /* ---------- cliente e mês (pastas) ---------- */
 const CLIENTES_PADRAO = [
-  { "nome": "Farmarin", "cnpj": [] },
-  { "nome": "Nipro", "cnpj": [] },
-  { "nome": "Nadir", "cnpj": [] },
-  { "nome": "Rosetto", "cnpj": [] },
-  { "nome": "Molin", "cnpj": [] },
-  { "nome": "Especifarma", "cnpj": [] },
-  { "nome": "Outros", "cnpj": [] }
+  { "nome": "Farmarin" },
+  { "nome": "Nipro" },
+  { "nome": "Nadir" },
+  { "nome": "Rosetto" },
+  { "nome": "Molin" },
+  { "nome": "Especifarma" },
+  { "nome": "Outros" }
 ];
 let clientes = CLIENTES_PADRAO;
 const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -641,14 +639,8 @@ async function loadClientes(){
   }catch(e){}
   renderClientes(); refreshName();
 }
-function clientePorCnpj(list){
-  for (const cnpj of list || []){
-    const raiz = String(cnpj).replace(/\D/g, "").slice(0, 8);
-    const c = clientes.find(c => (c.cnpj || []).some(x => String(x).replace(/\D/g, "").slice(0, 8) === raiz));
-    if (c) return pastaNome(c.nome);
-  }
-  return "";
-}
+/* Cliente é sempre escolhido à mão: o app não usa o CNPJ do emitente. */
+function clientePorCnpj(){ return ""; }
 function mesAtual(){ const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
 function mesDaChave(aamm){ return aamm && /^\d{4}$/.test(aamm) ? "20" + aamm.slice(0, 2) + "-" + aamm.slice(2, 4) : ""; }
 function pastaDestino(){
@@ -689,7 +681,7 @@ function showKey(p){
   if (p){
     $("keyBox").hidden = false; $("meta").hidden = false;
     $("keyTx").textContent = fmtKey(p.chave);
-    $("mSerie").textContent = (isNota(p) ? "NF-e " : "CT-e ") + p.numero + " · série " + p.serie; $("mData").textContent = fmtAamm(p.aamm); $("mCnpj").textContent = fmtCnpj(p.cnpj);
+    $("mSerie").textContent = (isNota(p) ? "NF-e " : "CT-e ") + p.numero + " · série " + p.serie; $("mData").textContent = fmtAamm(p.aamm);
   } else {
     $("keyBox").hidden = true; $("meta").hidden = true;
   }
@@ -978,7 +970,7 @@ async function savePdf(){
       pdf.addImage(c.toDataURL("image/jpeg", .78), "JPEG", (pw - w) / 2, (phh - h) / 2, w, h);
       await tick();
     }
-    pdf.setProperties({ title: fname.replace(/\.pdf$/i, ""), subject: st.key ? "Chave " + st.key.chave : "" });
+    pdf.setProperties({ title: fname.replace(/\.pdf$/i, ""), subject: "" });
     const blob = pdf.output("blob");
     await saveFile(blob, fname);
     const n = ($("numero").value || "").replace(/[^\d-]/g, "");

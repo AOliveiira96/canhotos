@@ -1,9 +1,9 @@
 [
-  { "nome": "Farmarin", "cnpj": [] },
-  { "nome": "Nipro", "cnpj": [] },
-  { "nome": "Nadir", "cnpj": [] },
-  { "nome": "Rosetto", "cnpj": [] },
-  { "nome": "Molin", "cnpj": [] },
-  { "nome": "Especifarma", "cnpj": [] },
-  { "nome": "Outros", "cnpj": [] }
+  { "nome": "Farmarin" },
+  { "nome": "Nipro" },
+  { "nome": "Nadir" },
+  { "nome": "Rosetto" },
+  { "nome": "Molin" },
+  { "nome": "Especifarma" },
+  { "nome": "Outros" }
 ]
