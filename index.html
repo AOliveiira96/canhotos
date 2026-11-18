@@ -559,10 +559,13 @@ async function identify(src){
   const p = await decodePhoto(src);
   if (isNota(p)) return { doc: p, nums: [p.numero], canhoto: null, exact: true, via: "barras", cnpjs: [p.cnpj] };
   let r = null;
+  st.ocrErr = p ? "" : "código de barras não lido";
   if (ocrAvailable()){
     setStatus("busy", "Lendo a nota");
-    try{ r = await readByOcr(src, t => setMsg("readMsg", t), p ? { ...p, exact: true } : null); }catch(e){ r = null; }
-  }
+    try{ r = await readByOcr(src, t => setMsg("readMsg", t), p ? { ...p, exact: true } : null);
+      if (!r) st.ocrErr += (st.ocrErr ? "; " : "") + "chave impressa não encontrada na foto"; }
+    catch(e){ r = null; st.ocrErr += (st.ocrErr ? "; " : "") + "leitura de texto falhou: " + ((e && (e.message || e)) + "").slice(0, 120); }
+  } else st.ocrErr += (st.ocrErr ? "; " : "") + "leitura de texto não carregou";
   if (!r) return p ? { doc: p, nums: [], canhoto: null, exact: false, via: "barras" } : null;
   const doc = p || (r.cte ? keyInfo(r.cte.chave) : null);
   let nums = r.nfs.slice();
@@ -586,7 +589,7 @@ function applyResult(res){
   const docTx = res.doc ? (nota ? "NF-e " : "CT-e ") + res.doc.numero : "";
   if (!res.nums.length){
     setStatus("warn", "Digite o número da NF");
-    setMsg("readMsg", (docTx ? docTx + " lido. " : "") + "Não consegui ler o número da NF. Digite o número que aparece no canhoto ou nas chaves do CT-e.", "warn");
+    setMsg("readMsg", (docTx ? docTx + " lido. " : "") + "Não consegui ler o número da NF. Digite o número que aparece no canhoto ou nas chaves do CT-e." + detalhe(), "warn");
     try{ $("numero").focus(); }catch(e){}
   } else {
     const nTx = res.nums.length > 1 ? "NFs " + res.nums.join(", ") : "NF " + res.nums[0];
@@ -699,9 +702,10 @@ function applyDoc(p, source){
   setMsg("readMsg", "Lido pelo código de barras. Chave conferida pelo dígito verificador.");
   refreshName();
 }
+function detalhe(){ return st.ocrErr ? " (Detalhe: " + st.ocrErr + ")" : ""; }
 function notFound(){
   setStatus("warn", "Número não encontrado");
-  setMsg("readMsg", "Não consegui ler o documento. Digite o número da NF acima e escolha NF ou CT-e.", "warn");
+  setMsg("readMsg", "Não consegui ler o documento. Digite o número da NF acima e escolha NF ou CT-e." + detalhe(), "warn");
   st.key = null; st.nameEdited = false; $("numero").value = "";
   showKey(null);
   refreshName();
